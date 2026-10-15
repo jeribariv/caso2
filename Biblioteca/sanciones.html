@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biblioteca Digital del Saber - Gestión de sanciones</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-dark bg-dark">
+  <div class="container"><span class="navbar-brand mb-0">Biblioteca Digital del Saber - Gestión de sanciones</span></div>
+</nav>
+<div class="container my-4">
+  <div id="mensajes"></div>
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <div class="input-group">
+      <span class="input-group-text">Buscar por lector:</span>
+      <input id="txtBuscar" class="form-control" type="text">
+      <button class="btn btn-primary" onclick="filtrar('Buscar')">Buscar</button>
+    </div>
+  </div></div>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3"><div class="col-md-6"><label for="id_sancion" class="form-label fw-semibold">ID Sanción:</label><input id="id_sancion" class="form-control bg-light" readonly></div><div class="col-md-6"><label for="lector" class="form-label fw-semibold">Lector:</label><select id="lector" class="form-select"><option value="">Seleccione...</option><option>Juan Pérez Rojas</option><option>María Torres Díaz</option><option>Luis Ramos Soto</option></select></div><div class="col-md-6"><label for="prestamo" class="form-label fw-semibold">Préstamo:</label><select id="prestamo" class="form-select"><option value="">Seleccione...</option><option>1</option><option>2</option><option>3</option></select></div><div class="col-12"><label for="motivo" class="form-label fw-semibold">Motivo:</label><textarea id="motivo" class="form-control" rows="3"></textarea></div><div class="col-md-6"><label for="monto_s" class="form-label fw-semibold">Monto (S/):</label><input id="monto_s" type="number" min="0" step="0.01" class="form-control"></div><div class="col-md-6"><label for="estado" class="form-label fw-semibold">Estado:</label><select id="estado" class="form-select"><option value="">Seleccione...</option><option>Pendiente</option><option>Pagada</option></select></div></div>
+      <div class="mt-4 d-flex gap-2 flex-wrap"><button class="btn btn-primary" onclick="ejecutar(0)">Registrar sanción</button><button class="btn btn-primary" onclick="ejecutar(1)">Consultar</button><button class="btn btn-secondary" onclick="ejecutar(2)">Limpiar</button></div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover table-striped mb-0">
+        <thead class="table-dark"><tr><th>ID</th><th>Lector</th><th>Préstamo</th><th>Motivo</th><th>Monto</th><th>Estado</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const CAMPOS = [{"k": "id_sancion", "l": "ID Sanción", "t": "auto", "r": false}, {"k": "lector", "l": "Lector", "t": "select", "o": ["Juan Pérez Rojas", "María Torres Díaz", "Luis Ramos Soto"], "r": true}, {"k": "prestamo", "l": "Préstamo", "t": "select", "o": ["1", "2", "3"], "r": true}, {"k": "motivo", "l": "Motivo", "t": "area", "r": false}, {"k": "monto_s", "l": "Monto (S/)", "t": "number", "s": "0.01", "r": true}, {"k": "estado", "l": "Estado", "t": "select", "o": ["Pendiente", "Pagada"], "r": true}];
+const COLUMNAS = [{"k": "id_sancion", "l": "ID"}, {"k": "lector", "l": "Lector"}, {"k": "prestamo", "l": "Préstamo"}, {"k": "motivo", "l": "Motivo"}, {"k": "monto_s", "l": "Monto"}, {"k": "estado", "l": "Estado"}];
+const BOTONES = [{"l": "Registrar sanción", "a": "add"}, {"l": "Consultar", "a": "filter"}, {"l": "Limpiar", "a": "clear"}];
+const MODO = "crud";
+const AUTOS = ["id_sancion"];
+let datos = [{"_id": 1, "id_sancion": 1, "lector": "Juan Pérez Rojas", "prestamo": "1", "motivo": "", "monto_s": "120.00", "estado": "Pendiente"}, {"_id": 2, "id_sancion": 2, "lector": "María Torres Díaz", "prestamo": "2", "motivo": "", "monto_s": "80.00", "estado": "Pagada"}, {"_id": 3, "id_sancion": 3, "lector": "Luis Ramos Soto", "prestamo": "3", "motivo": "", "monto_s": "250.00", "estado": "Pendiente"}];
+let seleccionado = null;
+let vista = datos;
+let siguiente = datos.reduce((m, d) => Math.max(m, d._id), 0) + 1;
+
+const $ = id => document.getElementById(id);
+const hoy = () => new Date().toISOString().slice(0, 10);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const H = { calcular(){}, validar(d,a){ return ''; }, limpiar(){}, linea(){} };
+
+function calcular() { H.calcular(); }
+
+function mensaje(texto, tipo) {
+  $('mensajes').innerHTML =
+    '<div class="alert alert-' + tipo + ' alert-dismissible fade show" role="alert">' + esc(texto) +
+    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+}
+
+function valorInicial(c) {
+  if (c.t === 'auto') return 'Automático';
+  if (c.t === 'g' && c.h) return hoy();
+  return '';
+}
+
+function pintarTabla(lista) {
+  vista = lista;
+  const tb = $('tbody');
+  if (lista.length === 0) {
+    tb.innerHTML = '<tr><td colspan="' + COLUMNAS.length + '" class="text-center text-muted">No se encontraron registros</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(d =>
+    '<tr style="cursor:pointer" class="' + (d._id === seleccionado ? 'table-primary' : '') + '" onclick="cargar(' + d._id + ')">' +
+    COLUMNAS.map(c => '<td>' + esc(d[c.k] === undefined ? '' : d[c.k]) + '</td>').join('') + '</tr>'
+  ).join('');
+}
+
+function limpiar() {
+  seleccionado = null;
+  CAMPOS.forEach(c => { $(c.k).value = valorInicial(c); });
+  if ($('txtBuscar')) $('txtBuscar').value = '';
+  H.limpiar();
+  calcular();
+  pintarTabla(datos);
+}
+
+function leerFormulario() {
+  const d = {};
+  CAMPOS.forEach(c => { if (c.t !== 'auto') d[c.k] = $(c.k).value.trim(); });
+  CAMPOS.filter(c => c.h).forEach(c => { d[c.k] = hoy(); });
+  return d;
+}
+
+function validar(d, accion) {
+  for (const c of CAMPOS) {
+    if (!c.r) continue;
+    if (d[c.k] === '') return 'Complete el campo "' + c.l + '".';
+    if (c.p && !new RegExp(c.p).test(d[c.k])) return c.m;
+    if (c.t === 'number' && Number(d[c.k]) < 0) return 'El campo "' + c.l + '" no puede ser negativo.';
+  }
+  return H.validar(d, accion);
+}
+
+function guardar(modificar) {
+  if (modificar && seleccionado === null) { mensaje('Primero seleccione un registro de la tabla.', 'warning'); return; }
+  const d = leerFormulario();
+  const error = validar(d, modificar ? 'update' : 'add');
+  if (error) { mensaje(error, 'danger'); return; }
+  if (modificar) {
+    d._id = seleccionado;
+    AUTOS.forEach(k => { d[k] = seleccionado; });
+    datos = datos.map(x => x._id === seleccionado ? Object.assign({}, x, d) : x);
+  } else {
+    d._id = siguiente++;
+    AUTOS.forEach(k => { d[k] = d._id; });
+    COLUMNAS.forEach(c => { if (d[c.k] === undefined) d[c.k] = '—'; });
+    datos.push(d);
+  }
+  limpiar();
+  mensaje(modificar ? 'Registro modificado correctamente.' : 'Registro agregado correctamente.', 'success');
+}
+
+function cancelar() {
+  if (seleccionado === null) { mensaje('Primero seleccione un registro de la tabla.', 'warning'); return; }
+  if (!confirm('¿Seguro que desea cancelar este registro?')) return;
+  const campo = CAMPOS.find(c => c.t === 'select' && /estado/i.test(c.l));
+  const op = campo ? campo.o.find(o => /cancel/i.test(o)) : null;
+  if (op) {
+    datos = datos.map(x => x._id === seleccionado ? Object.assign({}, x, {[campo.k]: op}) : x);
+  } else {
+    datos = datos.filter(x => x._id !== seleccionado);
+  }
+  limpiar();
+  mensaje('Registro cancelado correctamente.', 'success');
+}
+
+function filtrar(etiqueta) {
+  const tb = $('txtBuscar');
+  const t = tb ? tb.value.trim().toLowerCase() : '';
+  let res = datos.filter(d => !t || COLUMNAS.some(c => String(d[c.k] === undefined ? '' : d[c.k]).toLowerCase().includes(t)));
+  CAMPOS.forEach(c => {
+    if (c.t === 'auto' || c.t === 'g' || c.t === 'area') return;
+    const v = $(c.k).value.trim();
+    if (!v || /^(todos|todas)$/i.test(v)) return;
+    if (!COLUMNAS.some(x => x.k === c.k)) return;
+    res = res.filter(d => String(d[c.k] === undefined ? '' : d[c.k]).toLowerCase().includes(v.toLowerCase()));
+  });
+  if (/vencimiento/i.test(etiqueta)) res = res.filter(d => d.estado === 'Vencido');
+  if (/disponibilidad/i.test(etiqueta) && CAMPOS.some(c => c.k === 'disponibilidad' || (c.o && c.o.includes('Disponible'))))
+    res = res.filter(d => d.estado === 'Disponible' || d.disponibilidad === 'Disponible');
+  pintarTabla(res);
+  mensaje(res.length ? 'Se encontraron ' + res.length + ' registro(s).' : 'No se encontraron resultados.', res.length ? 'success' : 'info');
+}
+
+function ejecutar(i) {
+  const b = BOTONES[i];
+  if (b.a === 'clear') limpiar();
+  else if (b.a === 'filter') filtrar(b.l);
+  else if (b.a === 'linea') H.linea();
+  else if (b.a === 'add') guardar(false);
+  else if (b.a === 'update') guardar(true);
+  else if (b.a === 'upsert') guardar(seleccionado !== null);
+  else if (b.a === 'cancel') cancelar();
+}
+
+function cargar(id) {
+  if (MODO === 'consulta') return;
+  const d = datos.find(x => x._id === id);
+  if (!d) return;
+  seleccionado = id;
+  CAMPOS.forEach(c => { $(c.k).value = c.t === 'auto' ? d._id : (d[c.k] === undefined ? '' : d[c.k]); });
+  calcular();
+  pintarTabla(vista);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  CAMPOS.forEach(c => {
+    $(c.k).addEventListener('input', calcular);
+    $(c.k).addEventListener('change', calcular);
+  });
+  if ($('txtBuscar')) $('txtBuscar').addEventListener('keydown', e => { if (e.key === 'Enter') filtrar('Buscar'); });
+  limpiar();
+});
+</script>
+</body>
+</html>
